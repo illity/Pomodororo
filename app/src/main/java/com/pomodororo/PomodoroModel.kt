@@ -7,7 +7,7 @@ data class PomodoroModel(
     val restSeconds: Int = 5 * 60,
     val currentPhase: String = "focus",
     val remainingSeconds: Int = 25 * 60,
-    val completedSessions: Int = 0,
+    var completedSessions: Int = 0,
     val totalSessions: Int = 4,
-    val isRunning: Boolean = true
+    val isRunning: Boolean = false
 )
