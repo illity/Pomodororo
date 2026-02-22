@@ -1,13 +1,11 @@
 package com.pomodororo
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Room
 import com.pomodororo.data.AppDatabase
-import com.pomodororo.data.PomodoroStatsDao
-import com.pomodororo.data.PomodoroStatsEntity
-import com.pomodororo.data.mapper.toEntity
-import com.pomodororo.data.mapper.toModel
-import com.pomodororo.model.PomodoroModel
+import com.pomodororo.model.PomodoroCycleModel
+import com.pomodororo.model.PomodoroSessionModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,37 +19,39 @@ object PomodoroController {
 
 
     private lateinit var database: AppDatabase
-    private lateinit var statsDao: PomodoroStatsDao
+    private lateinit var dao: PomodoroRepository
+
+
+
+    private val _state = MutableStateFlow(PomodoroCycleModel())
+    private val _session = MutableStateFlow(PomodoroSessionModel())
+    val state: StateFlow<PomodoroCycleModel> = _state.asStateFlow()
 
     fun init(context: Context) {
-        println("first")
+        Log.d("Controller", "init called")
         database = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "pomodoro_db"
         ).build()
 
-        statsDao = database.statsDao()
+        dao = PomodoroRepository(database.cycleDao(),
+                                 database.sessionDao())
 
-        // Ensure row exists
         CoroutineScope(Dispatchers.IO).launch {
-            val stats = statsDao.getStats()
-            if (stats == null) {
-                statsDao.insert(PomodoroStatsEntity())
-            }  else {
-                _state.value = stats.toModel()
-            }
+            println("try to load")
+            val cycle = dao.load()
+            val session = dao.loadSession(cycle.id)
+            Log.d("Controller", cycle.tag)
+            _state.value = cycle
+            _session.value = session
         }
     }
-
-    private val _state = MutableStateFlow(PomodoroModel())
-    val state: StateFlow<PomodoroModel> = _state.asStateFlow()
 
     private var job: Job? = null
 
     fun togglePlayPause() {
         if (_state.value.isRunning) stopTimer() else startTimer()
-        save()
 
     }
 
@@ -71,6 +71,7 @@ object PomodoroController {
             }
             phaseCheck()
         }
+        save()
     }
 
     private fun phaseCheck() {
@@ -80,9 +81,12 @@ object PomodoroController {
         if (_state.value.remainingSeconds <= 0) {
 
             // switch phase
-            if (_state.value.currentPhase == "focus") _state.value = _state.value.copy(
-                doneSessions = _state.value.doneSessions + 1
-            )
+            if (_state.value.currentPhase == "focus") {
+                _state.value = _state.value.copy(
+                    doneSessions = _state.value.doneSessions + 1
+                )
+                saveSessionAndNext()
+            }
             if (_state.value.currentPhase == "rest") _state.value = _state.value.copy(
                 completedSessions = _state.value.completedSessions + 1
             )
@@ -101,14 +105,24 @@ object PomodoroController {
     private fun save() {
         println("save is called")
         CoroutineScope(Dispatchers.IO).launch {
-            val stats = statsDao.getStats()
-            println(stats?.remainingSeconds)
-            println(_state.value.toEntity().remainingSeconds)
-            statsDao.update(_state.value.toEntity())
-            val stats2 = statsDao.getStats()
-            println(stats2?.remainingSeconds)
+            dao.save(_state.value)
         }
     }
+
+    private fun saveSessionAndNext() {
+        Log.d("Controller", "saveSessionAndNextCalled")
+        CoroutineScope(Dispatchers.IO).launch {
+            _session.value = _session.value.copy(
+                active = false,
+                endTime = System.currentTimeMillis()
+            )
+            dao.saveSession(_session.value)
+            dao.nextSession(_state.value.id)
+            _session.value = dao.loadSession(_state.value.id) //since has no active session in current cycle, create a new one
+        }
+
+    }
+
     private fun stopTimer() {
         _state.value = _state.value.copy(isRunning = false)
         save()
@@ -116,9 +130,18 @@ object PomodoroController {
     }
 
     fun cancel() {
-        _state.value = PomodoroModel(
-            doneSessions = _state.value.doneSessions
+        Log.d("Controller", "deactivating the ${_state.value.id}")
+        _state.value = _state.value.copy(
+            active = false
         )
+        CoroutineScope(Dispatchers.IO).launch {
+            Log.d("Controller", "saving the ${_state.value.id}, current Status: ${_state.value.active}")
+            dao.save(_state.value)
+            Log.d("Controller", "creating a new model")
+            dao.next()
+            _state.value = dao.load()
+            Log.d("Controller", "loaded model: ${_state.value.id}")
+        }
         stopTimer()
     }
 

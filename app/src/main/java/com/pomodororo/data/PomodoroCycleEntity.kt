@@ -1,13 +1,13 @@
-// data/PomodoroStatsEntity.kt
-
 package com.pomodororo.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "pomodoro_stats")
-data class PomodoroStatsEntity(
-    @PrimaryKey val id: Int = 0, // always 0 (single row)
+@Entity(tableName = "pomodoro_cycle")
+data class PomodoroCycleEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+
     val tag: String = "study",
     val focusSeconds: Int = 25 * 60,
     val restSeconds: Int = 5 * 60,
@@ -16,5 +16,6 @@ data class PomodoroStatsEntity(
     var completedSessions: Int = 0,
     val totalSessions: Int = 4,
     val isRunning: Boolean = false,
-    val doneSessions: Int = 0
+    val doneSessions: Int = 0,
+    val active: Boolean = true
 )

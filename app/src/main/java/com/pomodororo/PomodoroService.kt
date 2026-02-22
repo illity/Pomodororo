@@ -8,7 +8,7 @@ import android.content.Intent
 import android.media.MediaPlayer
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import com.pomodororo.model.PomodoroModel
+import com.pomodororo.model.PomodoroCycleModel
 import kotlinx.coroutines.*
 
 class PomodoroService : Service() {
@@ -68,7 +68,7 @@ class PomodoroService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    private fun createNotification(model: PomodoroModel): Notification {
+    private fun createNotification(model: PomodoroCycleModel): Notification {
         val minutes = model.remainingSeconds / 60
         val seconds = model.remainingSeconds % 60
         val timeText = "%02d:%02d".format(minutes, seconds)

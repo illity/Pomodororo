@@ -1,7 +1,7 @@
-// model/PomodoroModel.kt
 package com.pomodororo.model
 
-data class PomodoroModel(
+data class PomodoroCycleModel(
+    val id: Int = 0,
     val tag: String = "study",
     val focusSeconds: Int = 25 * 60,
     val restSeconds: Int = 5 * 60,
@@ -10,5 +10,6 @@ data class PomodoroModel(
     var completedSessions: Int = 0,
     val totalSessions: Int = 4,
     val isRunning: Boolean = false,
-    val doneSessions: Int = 0
+    val doneSessions: Int = 0,
+    val active: Boolean = true
 )
