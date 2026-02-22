@@ -9,5 +9,6 @@ data class PomodoroModel(
     val remainingSeconds: Int = 25 * 60,
     var completedSessions: Int = 0,
     val totalSessions: Int = 4,
-    val isRunning: Boolean = false
+    val isRunning: Boolean = false,
+    val doneSessions: Int = 0
 )

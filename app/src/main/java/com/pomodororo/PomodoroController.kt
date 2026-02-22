@@ -1,5 +1,12 @@
+package com.pomodororo
+
 import android.content.Context
 import androidx.room.Room
+import com.pomodororo.data.AppDatabase
+import com.pomodororo.data.PomodoroStatsDao
+import com.pomodororo.data.PomodoroStatsEntity
+import com.pomodororo.data.mapper.toEntity
+import com.pomodororo.data.mapper.toModel
 import com.pomodororo.model.PomodoroModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,8 +35,11 @@ object PomodoroController {
 
         // Ensure row exists
         CoroutineScope(Dispatchers.IO).launch {
-            if (statsDao.getStats() == null) {
+            val stats = statsDao.getStats()
+            if (stats == null) {
                 statsDao.insert(PomodoroStatsEntity())
+            }  else {
+                _state.value = stats.toModel()
             }
         }
     }
@@ -41,6 +51,7 @@ object PomodoroController {
 
     fun togglePlayPause() {
         if (_state.value.isRunning) stopTimer() else startTimer()
+        save()
 
     }
 
@@ -67,14 +78,11 @@ object PomodoroController {
             cancel()
         }
         if (_state.value.remainingSeconds <= 0) {
-            CoroutineScope(Dispatchers.IO).launch {
-                statsDao.incrementPhaseSwitch()
-                val stats = statsDao.getStats()
-                println(stats?.phaseSwitchCount)
-
-            }
 
             // switch phase
+            if (_state.value.currentPhase == "focus") _state.value = _state.value.copy(
+                doneSessions = _state.value.doneSessions + 1
+            )
             if (_state.value.currentPhase == "rest") _state.value = _state.value.copy(
                 completedSessions = _state.value.completedSessions + 1
             )
@@ -84,17 +92,33 @@ object PomodoroController {
                 remainingSeconds = nextSeconds,
                 isRunning = false
             )
+            save()
             job?.cancel()
         }
     }
 
+
+    private fun save() {
+        println("save is called")
+        CoroutineScope(Dispatchers.IO).launch {
+            val stats = statsDao.getStats()
+            println(stats?.remainingSeconds)
+            println(_state.value.toEntity().remainingSeconds)
+            statsDao.update(_state.value.toEntity())
+            val stats2 = statsDao.getStats()
+            println(stats2?.remainingSeconds)
+        }
+    }
     private fun stopTimer() {
         _state.value = _state.value.copy(isRunning = false)
+        save()
         job?.cancel()
     }
 
     fun cancel() {
-        _state.value = PomodoroModel()
+        _state.value = PomodoroModel(
+            doneSessions = _state.value.doneSessions
+        )
         stopTimer()
     }
 
