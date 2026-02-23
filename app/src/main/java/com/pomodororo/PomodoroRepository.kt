@@ -41,8 +41,8 @@ class PomodoroRepository(
     }
 
     suspend fun nextSession(cycleId: Int) {
-        Log.d("PomodoroRepository", "nextSession is called. inserted to cycleId ${cycleId}")
-        sessionDao.insert(PomodoroSessionModel(cycleId = cycleId).toEntity())
+        val id = sessionDao.insert(PomodoroSessionModel(cycleId = cycleId).toEntity())
+        Log.d("PomodoroRepository", "nextSession is called. inserted to cycleId ${cycleId}, ${id}")
     }
 
 }

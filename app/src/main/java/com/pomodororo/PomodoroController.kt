@@ -75,9 +75,6 @@ object PomodoroController {
     }
 
     private fun phaseCheck() {
-        if (_state.value.completedSessions == _state.value.totalSessions) {
-            cancel()
-        }
         if (_state.value.remainingSeconds <= 0) {
 
             // switch phase
@@ -85,7 +82,16 @@ object PomodoroController {
                 _state.value = _state.value.copy(
                     doneSessions = _state.value.doneSessions + 1
                 )
-                saveSessionAndNext()
+                Log.d("Controller", "done a session in cycleId${_state.value.id}")
+                _session.value = _session.value.copy(
+                    active = false,
+                    endTime = System.currentTimeMillis()
+                )
+
+                saveSession()
+                if (_state.value.doneSessions < 4) {
+                    nextSession()
+                }
             }
             if (_state.value.currentPhase == "rest") _state.value = _state.value.copy(
                 completedSessions = _state.value.completedSessions + 1
@@ -96,6 +102,9 @@ object PomodoroController {
                 remainingSeconds = nextSeconds,
                 isRunning = false
             )
+            if (_state.value.completedSessions == _state.value.totalSessions) {
+                cancel()
+            }
             save()
             job?.cancel()
         }
@@ -109,18 +118,19 @@ object PomodoroController {
         }
     }
 
-    private fun saveSessionAndNext() {
-        Log.d("Controller", "saveSessionAndNextCalled")
+    private fun saveSession() {
+        Log.d("Controller", "saveSession")
         CoroutineScope(Dispatchers.IO).launch {
-            _session.value = _session.value.copy(
-                active = false,
-                endTime = System.currentTimeMillis()
-            )
             dao.saveSession(_session.value)
+        }
+    }
+
+    private fun nextSession() {
+        Log.d("Controller", "nextSession")
+        CoroutineScope(Dispatchers.IO).launch {
             dao.nextSession(_state.value.id)
             _session.value = dao.loadSession(_state.value.id) //since has no active session in current cycle, create a new one
         }
-
     }
 
     private fun stopTimer() {
@@ -130,17 +140,19 @@ object PomodoroController {
     }
 
     fun cancel() {
-        Log.d("Controller", "deactivating the ${_state.value.id}")
-        _state.value = _state.value.copy(
-            active = false
-        )
         CoroutineScope(Dispatchers.IO).launch {
+            Log.d("Controller", "deactivating the ${_state.value.id}")
+            _state.value = _state.value.copy(
+                active = false
+            )
             Log.d("Controller", "saving the ${_state.value.id}, current Status: ${_state.value.active}")
             dao.save(_state.value)
             Log.d("Controller", "creating a new model")
             dao.next()
             _state.value = dao.load()
-            Log.d("Controller", "loaded model: ${_state.value.id}")
+            dao.nextSession(_state.value.id)
+            _session.value = dao.loadSession(_state.value.id)
+                Log.d("Controller", "loaded model: ${_state.value.id}")
         }
         stopTimer()
     }
