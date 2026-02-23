@@ -5,12 +5,14 @@ import com.pomodororo.model.PomodoroCycleModel
 import com.pomodororo.data.mapper.*
 import com.pomodororo.data.PomodoroCycleDao
 import com.pomodororo.data.PomodoroSessionDao
+import com.pomodororo.data.TagDao
 import com.pomodororo.model.PomodoroSessionModel
 
 
 class PomodoroRepository(
     private val cycleDao: PomodoroCycleDao,
-    private val sessionDao: PomodoroSessionDao
+    private val sessionDao: PomodoroSessionDao,
+    private val tagDao: TagDao
 ) {
 
     suspend fun load(): PomodoroCycleModel {
@@ -23,12 +25,9 @@ class PomodoroRepository(
         cycleDao.upsert(model.toEntity())
     }
 
-    suspend fun loadSession(cycleId: Int): PomodoroSessionModel {
+    suspend fun loadSessions(cycleId: Int): List<PomodoroSessionModel> {
         Log.d("PomodoroRepository", "LoadSession, cycleId: ${cycleId}")
-        return sessionDao.getActive(cycleId)?.toModel()
-            ?: PomodoroSessionModel(
-                cycleId = cycleId
-            ) // default if DB empty
+        return sessionDao.getAll(cycleId)// default if DB empty
     }
 
     suspend fun saveSession(model: PomodoroSessionModel) {
@@ -40,9 +39,16 @@ class PomodoroRepository(
         cycleDao.insert(PomodoroCycleModel().toEntity())
     }
 
-    suspend fun nextSession(cycleId: Int) {
-        val id = sessionDao.insert(PomodoroSessionModel(cycleId = cycleId).toEntity())
+    suspend fun nextSession(cycleId: Int): Long {
+        val id = sessionDao.insert(PomodoroSessionModel(
+            cycleId = cycleId
+        ).toEntity())
         Log.d("PomodoroRepository", "nextSession is called. inserted to cycleId ${cycleId}, ${id}")
+        return id
+    }
+
+    suspend fun getColor(tag: String) : Long? {
+        return tagDao.get(tag)
     }
 
 }

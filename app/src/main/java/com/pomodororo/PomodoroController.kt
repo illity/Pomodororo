@@ -1,67 +1,77 @@
 package com.pomodororo
 
 import android.content.Context
-import android.util.Log
 import androidx.room.Room
 import com.pomodororo.data.AppDatabase
 import com.pomodororo.model.PomodoroCycleModel
 import com.pomodororo.model.PomodoroSessionModel
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 object PomodoroController {
 
-
     private lateinit var database: AppDatabase
-    private lateinit var dao: PomodoroRepository
+    private lateinit var repository: PomodoroRepository
 
-
+    /* -------------------- STATE -------------------- */
 
     private val _state = MutableStateFlow(PomodoroCycleModel())
-    private val _session = MutableStateFlow(PomodoroSessionModel())
     val state: StateFlow<PomodoroCycleModel> = _state.asStateFlow()
 
+    private val _sessions = MutableStateFlow<List<PomodoroSessionModel>>(emptyList())
+    val sessions: StateFlow<List<PomodoroSessionModel>> = _sessions.asStateFlow()
+
+    /** Derived current session (active one) */
+    val currentSession: StateFlow<PomodoroSessionModel?> =
+        _sessions.map { list -> list.firstOrNull { it.active } }
+            .stateIn(
+                CoroutineScope(Dispatchers.Default),
+                SharingStarted.Eagerly,
+                null
+            )
+
+    private var job: Job? = null
+
+    /* -------------------- INIT -------------------- */
+
     fun init(context: Context) {
-        Log.d("Controller", "init called")
+
         database = Room.databaseBuilder(
             context.applicationContext,
             AppDatabase::class.java,
             "pomodoro_db"
         ).build()
 
-        dao = PomodoroRepository(database.cycleDao(),
-                                 database.sessionDao())
+        repository = PomodoroRepository(
+            database.cycleDao(),
+            database.sessionDao(),
+            database.tagDao()
+        )
 
         CoroutineScope(Dispatchers.IO).launch {
-            println("try to load")
-            val cycle = dao.load()
-            val session = dao.loadSession(cycle.id)
-            Log.d("Controller", cycle.tag)
+            val cycle = repository.load()
             _state.value = cycle
-            _session.value = session
+
+            val sessions = repository.loadSessions(cycle.id)
+            _sessions.value = sessions
         }
     }
 
-    private var job: Job? = null
+    /* -------------------- TIMER -------------------- */
 
     fun togglePlayPause() {
-        if (_state.value.isRunning) stopTimer() else startTimer()
-
+        if (_state.value.isRunning) stopTimer()
+        else startTimer()
     }
 
     private fun startTimer() {
-        if(_state.value.completedSessions == _state.value.totalSessions) {
-            _state.value = _state.value.copy(
-                completedSessions = 0
-            )
+
+        if (_state.value.completedSessions == _state.value.totalSessions) {
+            _state.value = _state.value.copy(completedSessions = 0)
         }
+
         _state.value = _state.value.copy(isRunning = true)
+
         job = CoroutineScope(Dispatchers.Default).launch {
             while (_state.value.remainingSeconds > 0 && _state.value.isRunning) {
                 delay(1000)
@@ -71,104 +81,172 @@ object PomodoroController {
             }
             phaseCheck()
         }
-        save()
-    }
 
-    private fun phaseCheck() {
-        if (_state.value.remainingSeconds <= 0) {
-
-            // switch phase
-            if (_state.value.currentPhase == "focus") {
-                _state.value = _state.value.copy(
-                    doneSessions = _state.value.doneSessions + 1
-                )
-                Log.d("Controller", "done a session in cycleId${_state.value.id}")
-                _session.value = _session.value.copy(
-                    active = false,
-                    endTime = System.currentTimeMillis()
-                )
-
-                saveSession()
-                if (_state.value.doneSessions < 4) {
-                    nextSession()
-                }
-            }
-            if (_state.value.currentPhase == "rest") _state.value = _state.value.copy(
-                completedSessions = _state.value.completedSessions + 1
-            )
-            val nextPhase = if (_state.value.currentPhase == "focus") "rest" else "focus"
-            val nextSeconds = if (nextPhase == "focus") _state.value.focusSeconds else _state.value.restSeconds
-            _state.value = _state.value.copy(currentPhase = nextPhase,
-                remainingSeconds = nextSeconds,
-                isRunning = false
-            )
-            if (_state.value.completedSessions == _state.value.totalSessions) {
-                cancel()
-            }
-            save()
-            job?.cancel()
-        }
-    }
-
-
-    private fun save() {
-        println("save is called")
-        CoroutineScope(Dispatchers.IO).launch {
-            dao.save(_state.value)
-        }
-    }
-
-    private fun saveSession() {
-        Log.d("Controller", "saveSession")
-        CoroutineScope(Dispatchers.IO).launch {
-            dao.saveSession(_session.value)
-        }
-    }
-
-    private fun nextSession() {
-        Log.d("Controller", "nextSession")
-        CoroutineScope(Dispatchers.IO).launch {
-            dao.nextSession(_state.value.id)
-            _session.value = dao.loadSession(_state.value.id) //since has no active session in current cycle, create a new one
-        }
+        saveCycle()
     }
 
     private fun stopTimer() {
         _state.value = _state.value.copy(isRunning = false)
-        save()
+        saveCycle()
         job?.cancel()
     }
 
-    fun cancel() {
-        CoroutineScope(Dispatchers.IO).launch {
-            Log.d("Controller", "deactivating the ${_state.value.id}")
-            _state.value = _state.value.copy(
-                active = false
-            )
-            Log.d("Controller", "saving the ${_state.value.id}, current Status: ${_state.value.active}")
-            dao.save(_state.value)
-            Log.d("Controller", "creating a new model")
-            dao.next()
-            _state.value = dao.load()
-            dao.nextSession(_state.value.id)
-            _session.value = dao.loadSession(_state.value.id)
-                Log.d("Controller", "loaded model: ${_state.value.id}")
+    /* -------------------- PHASE LOGIC -------------------- */
+
+    private fun phaseCheck() {
+
+        if (_state.value.remainingSeconds > 0) return
+
+        if (_state.value.doneSessions == 4) {
+            cancel()
         }
+
+
+
+        if (_state.value.currentPhase == "focus") {
+
+            _state.value = _state.value.copy(
+                doneSessions = _state.value.doneSessions + 1
+            )
+            updateCurrentSession("rest")
+        }
+
+
+
+        if (_state.value.currentPhase == "rest") {
+            _state.value = _state.value.copy(
+                completedSessions = _state.value.completedSessions + 1
+            )
+
+            deactivateCurrentSession()
+            if (_sessions.value.size < 4) {
+                createNextSession("focus")
+            }
+
+        }
+
+        val nextPhase =
+            if (_state.value.currentPhase == "focus") "rest"
+            else "focus"
+
+        val nextSeconds =
+            if (nextPhase == "focus")
+                _state.value.focusSeconds
+            else
+                _state.value.restSeconds
+
+        _state.value = _state.value.copy(
+            currentPhase = nextPhase,
+            remainingSeconds = nextSeconds,
+            isRunning = false
+        )
+
+        saveCycle()
+        job?.cancel()
+    }
+
+    /* -------------------- SESSION LOGIC -------------------- */
+    private fun updateCurrentSession(currentPhase: String) {
+
+        val current = currentSession.value ?: return
+
+        val updated = current.copy(
+            currentPhase = currentPhase,
+            endTime = System.currentTimeMillis()
+        )
+
+        updateSessionInMemory(updated)
+
+        CoroutineScope(Dispatchers.IO).launch {
+            repository.saveSession(updated)
+        }
+    }
+
+
+    private fun deactivateCurrentSession() {
+
+        val current = currentSession.value ?: return
+
+        val updated = current.copy(
+            active = false,
+            endTime = System.currentTimeMillis()
+        )
+
+        updateSessionInMemory(updated)
+
+        CoroutineScope(Dispatchers.IO).launch {
+            repository.saveSession(updated)
+        }
+    }
+
+    private fun createNextSession(currentPhase: String) {
+
+        CoroutineScope(Dispatchers.IO).launch {
+
+            val id = repository.nextSession(_state.value.id)
+
+            val newSession = PomodoroSessionModel(
+                id = id.toInt(),
+                cycleId = _state.value.id,
+                active = true,
+                currentPhase = currentPhase
+            )
+
+            _sessions.value = _sessions.value + newSession
+        }
+    }
+
+    private fun updateSessionInMemory(updated: PomodoroSessionModel) {
+        _sessions.value = _sessions.value.map {
+            if (it.id == updated.id) updated else it
+        }
+    }
+
+    /* -------------------- PERSISTENCE -------------------- */
+
+    private fun saveCycle() {
+        CoroutineScope(Dispatchers.IO).launch {
+            repository.save(_state.value)
+        }
+    }
+
+    fun cancel() {
+
         stopTimer()
+
+        CoroutineScope(Dispatchers.IO).launch {
+
+            _state.value = _state.value.copy(active = false)
+            repository.save(_state.value)
+
+            repository.next()
+
+            val newCycle = repository.load()
+            _state.value = newCycle
+
+            _sessions.value = emptyList()
+
+            createNextSession(_state.value.currentPhase)
+        }
     }
 
     fun restart() {
         stopTimer()
         _state.value = _state.value.copy(
-            remainingSeconds = if (_state.value.currentPhase == "focus") _state.value.focusSeconds else _state.value.restSeconds
+            remainingSeconds =
+                if (_state.value.currentPhase == "focus")
+                    _state.value.focusSeconds
+                else
+                    _state.value.restSeconds
         )
-//        startTimer()
     }
 
     fun skip() {
-        _state.value = _state.value.copy(
-            remainingSeconds = 0,
-        )
+        _state.value = _state.value.copy(remainingSeconds = 0)
         phaseCheck()
+    }
+
+    suspend fun getColor(tag: String): Long? {
+        return repository.getColor(tag)
     }
 }

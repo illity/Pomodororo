@@ -11,5 +11,6 @@ data class PomodoroSessionEntity(
     val cycleId: Int,
     val tag: String = "study",
     val endTime: Long,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val currentPhase: String = "focus"
 )

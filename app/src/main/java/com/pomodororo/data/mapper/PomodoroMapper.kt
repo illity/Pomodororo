@@ -35,20 +35,12 @@ fun PomodoroCycleModel.toEntity(): PomodoroCycleEntity =
         active = active
     )
 
-fun PomodoroSessionEntity.toModel(): PomodoroSessionModel =
-    PomodoroSessionModel(
-        id = id,
-        cycleId = cycleId,
-        tag = tag,
-        endTime = endTime,
-        active = active
-    )
-
 fun PomodoroSessionModel.toEntity(): PomodoroSessionEntity =
     PomodoroSessionEntity(
         id = id,
         cycleId = cycleId,
         tag = tag,
         endTime = endTime,
-        active = active
+        active = active,
+        currentPhase = currentPhase
     )

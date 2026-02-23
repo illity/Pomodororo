@@ -5,5 +5,7 @@ data class PomodoroSessionModel(
     val cycleId: Int = 0,
     val tag: String = "study",
     val endTime: Long = 0,
-    val active: Boolean = true
+    val active: Boolean = true,
+    val color: Long = 0xffffffff,
+    val currentPhase: String = "focus"
 )
