@@ -6,11 +6,14 @@ import com.pomodororo.data.mapper.*
 import com.pomodororo.data.PomodoroCycleDao
 import com.pomodororo.data.PomodoroSessionDao
 import com.pomodororo.data.TagDao
+import com.pomodororo.data.TagEntity
 import com.pomodororo.model.PomodoroSessionModel
 import com.pomodororo.model.TagModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 
 
-class PomodoroRepository(
+class TagRepository(
     private val cycleDao: PomodoroCycleDao,
     private val sessionDao: PomodoroSessionDao,
     private val tagDao: TagDao
@@ -48,17 +51,17 @@ class PomodoroRepository(
         return id
     }
 
-
-    suspend fun getColor(tag: String) : Long? {
-        return tagDao.get(tag)
-    }
-
     suspend fun getAllTags(): List<TagModel> {
         return tagDao.getAll().map { it.toModel() }
     }
 
     suspend fun upsertTag(tag: TagModel) {
         tagDao.upsert(tag.toEntity())
+    }
+
+
+    suspend fun getColor(tag: String) : Long? {
+        return tagDao.get(tag)
     }
 
 }

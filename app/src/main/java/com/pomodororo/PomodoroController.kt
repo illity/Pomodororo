@@ -1,10 +1,12 @@
 package com.pomodororo
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Room
 import com.pomodororo.data.AppDatabase
 import com.pomodororo.model.PomodoroCycleModel
 import com.pomodororo.model.PomodoroSessionModel
+import com.pomodororo.model.TagModel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
@@ -20,6 +22,10 @@ object PomodoroController {
 
     private val _sessions = MutableStateFlow<List<PomodoroSessionModel>>(emptyList())
     val sessions: StateFlow<List<PomodoroSessionModel>> = _sessions.asStateFlow()
+
+    private val _tags = MutableStateFlow<List<TagModel>>(emptyList())
+    val tags: StateFlow<List<TagModel>> = _tags.asStateFlow()
+
 
     /** Derived current session (active one) */
     val currentSession: StateFlow<PomodoroSessionModel?> =
@@ -50,10 +56,14 @@ object PomodoroController {
 
         CoroutineScope(Dispatchers.IO).launch {
             val cycle = repository.load()
+            Log.d("Controller", "${cycle.color}")
             _state.value = cycle
 
             val sessions = repository.loadSessions(cycle.id)
             _sessions.value = sessions
+
+            val tags = repository.getAllTags()
+            _tags.value = tags
         }
     }
 
@@ -189,7 +199,8 @@ object PomodoroController {
                 id = id.toInt(),
                 cycleId = _state.value.id,
                 active = true,
-                currentPhase = currentPhase
+                currentPhase = currentPhase,
+                color = _state.value.color
             )
 
             _sessions.value = _sessions.value + newSession
@@ -239,6 +250,24 @@ object PomodoroController {
                 else
                     _state.value.restSeconds
         )
+    }
+
+    fun loadTags() {
+        CoroutineScope(Dispatchers.IO).launch {
+            _tags.value = repository.getAllTags()
+        }
+    }
+
+    fun updateTag(tag: TagModel) {
+        CoroutineScope(Dispatchers.IO).launch {
+            repository.upsertTag(tag)
+            _tags.value = repository.getAllTags() // refresh after update
+        }
+    }
+
+    fun selectTag(tag: TagModel) {
+        _state.value = _state.value.copy(tag = tag.tag, color = tag.color)
+        saveCycle()
     }
 
     fun skip() {
