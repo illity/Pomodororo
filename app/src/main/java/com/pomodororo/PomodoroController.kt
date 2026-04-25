@@ -54,6 +54,7 @@ object PomodoroController {
             database.tagDao()
         )
 
+        loadTags()
         CoroutineScope(Dispatchers.IO).launch {
             val cycle = repository.load()
             Log.d("Controller", "${cycle.color}")
@@ -61,9 +62,6 @@ object PomodoroController {
 
             val sessions = repository.loadSessions(cycle.id)
             _sessions.value = sessions
-
-            val tags = repository.getAllTags()
-            _tags.value = tags
         }
     }
 
@@ -102,37 +100,46 @@ object PomodoroController {
     }
 
     /* -------------------- PHASE LOGIC -------------------- */
-
     private fun phaseCheck() {
-
         if (_state.value.remainingSeconds > 0) return
 
-        if (_state.value.doneSessions == 4) {
-            cancel()
-        }
-
-
+        val currentTag = _state.value.tag
+        val currentColor = _state.value.color
 
         if (_state.value.currentPhase == "focus") {
-
             _state.value = _state.value.copy(
                 doneSessions = _state.value.doneSessions + 1
             )
-            updateCurrentSession("rest")
+            updateCurrentSession("rest", currentTag, currentColor)
         }
-
-
 
         if (_state.value.currentPhase == "rest") {
             _state.value = _state.value.copy(
                 completedSessions = _state.value.completedSessions + 1
             )
-
             deactivateCurrentSession()
-            if (_sessions.value.size < 4) {
-                createNextSession("focus")
-            }
+        }
 
+        // Check if cycle completed
+        if (_state.value.completedSessions >= 4) {
+            // Reset sessions
+            _state.value = _state.value.copy(
+                completedSessions = 0,
+                doneSessions = 0,
+                currentPhase = "focus",
+                remainingSeconds = _state.value.focusSeconds,
+                isRunning = false
+            )
+            _sessions.value = emptyList()
+            createNextSession("focus")
+            saveCycle()
+            job?.cancel()
+            return
+        }
+
+        // Otherwise, create next session if needed
+        if (_state.value.currentPhase == "rest") {
+            createNextSession("focus")
         }
 
         val nextPhase =
@@ -140,10 +147,8 @@ object PomodoroController {
             else "focus"
 
         val nextSeconds =
-            if (nextPhase == "focus")
-                _state.value.focusSeconds
-            else
-                _state.value.restSeconds
+            if (nextPhase == "focus") _state.value.focusSeconds
+            else _state.value.restSeconds
 
         _state.value = _state.value.copy(
             currentPhase = nextPhase,
@@ -154,14 +159,18 @@ object PomodoroController {
         saveCycle()
         job?.cancel()
     }
-
     /* -------------------- SESSION LOGIC -------------------- */
-    private fun updateCurrentSession(currentPhase: String) {
-
+    private fun updateCurrentSession(
+        currentPhase: String,
+        tag: String,
+        color: Long
+    ) {
         val current = currentSession.value ?: return
 
         val updated = current.copy(
+            tag = tag,
             currentPhase = currentPhase,
+            color = color,
             endTime = System.currentTimeMillis()
         )
 
@@ -171,7 +180,6 @@ object PomodoroController {
             repository.saveSession(updated)
         }
     }
-
 
     private fun deactivateCurrentSession() {
 
@@ -233,7 +241,10 @@ object PomodoroController {
             repository.next()
 
             val newCycle = repository.load()
-            _state.value = newCycle
+            _state.value = newCycle.copy(
+                tag = _state.value.tag,
+                color = _state.value.color
+            )
 
             _sessions.value = emptyList()
 
@@ -258,6 +269,22 @@ object PomodoroController {
         }
     }
 
+    fun addTag(tag: TagModel) {
+        updateTag(tag) // just upsert
+    }
+
+    fun renameTag(oldTag: String, newTag: String) {
+        val existing = _tags.value.find { it.tag == oldTag } ?: return
+        val updated = existing.copy(tag = newTag)
+        updateTag(updated)
+    }
+
+    fun changeTagColor(tagName: String, color: Long) {
+        val existing = _tags.value.find { it.tag == tagName } ?: return
+        val updated = existing.copy(color = color)
+        updateTag(updated)
+    }
+
     fun updateTag(tag: TagModel) {
         CoroutineScope(Dispatchers.IO).launch {
             repository.upsertTag(tag)
@@ -273,6 +300,12 @@ object PomodoroController {
     fun skip() {
         _state.value = _state.value.copy(remainingSeconds = 0)
         phaseCheck()
+    }
+
+    suspend fun loadSessionsByTag(tag: String):  List<PomodoroSessionModel> {
+        val sess = repository.loadSessionsByTag(tag)
+        Log.d("Controller", "${tag}: ${sess.size}")
+        return sess
     }
 
     suspend fun getColor(tag: String): Long? {

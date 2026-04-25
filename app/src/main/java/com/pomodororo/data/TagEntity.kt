@@ -5,8 +5,8 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "pomodoro_tag")
 data class TagEntity(
-    @PrimaryKey
-    val tag: String = "study",
-
-    val color: Long = 0xfff3644c,
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,        // unique identifier
+    val tag: String,         // name can now be changed freely
+    val color: Long = 0xfff3644c
 )

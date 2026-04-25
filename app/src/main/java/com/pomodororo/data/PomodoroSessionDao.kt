@@ -10,6 +10,9 @@ interface PomodoroSessionDao {
     @Query("SELECT pomodoro_session.*, color FROM pomodoro_session left join pomodoro_tag on pomodoro_session.tag = pomodoro_tag.tag WHERE cycleId = :cycleId")
     suspend fun getAll(cycleId: Int): List<PomodoroSessionModel>
 
+    @Query("SELECT pomodoro_session.*, color FROM pomodoro_session left join pomodoro_tag on pomodoro_session.tag = pomodoro_tag.tag WHERE pomodoro_session.tag = :tag")
+    suspend fun getAllByTag(tag: String): List<PomodoroSessionModel>
+
     @Query("SELECT pomodoro_session.*, color FROM pomodoro_session left join pomodoro_tag on pomodoro_session.tag = pomodoro_tag.tag WHERE cycleId = :cycleId AND active = 1")
     suspend fun getActive(cycleId: Int): PomodoroSessionModel?
 

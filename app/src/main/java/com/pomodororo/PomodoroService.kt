@@ -3,6 +3,7 @@ package com.pomodororo
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.media.MediaPlayer
@@ -68,15 +69,28 @@ class PomodoroService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+
     private fun createNotification(model: PomodoroCycleModel): Notification {
         val minutes = model.remainingSeconds / 60
         val seconds = model.remainingSeconds % 60
         val timeText = "%02d:%02d".format(minutes, seconds)
 
+        // Intent to open your MainActivity
+        val intent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Pomodoro Timer - ${model.currentPhase.replaceFirstChar { it.uppercase() }}")
             .setContentText("Time left: $timeText")
             .setSmallIcon(R.drawable.ic_launcher_foreground) // replace with your icon
+            .setContentIntent(pendingIntent) // ⚡ Here’s the click action
             .setOngoing(true)
             .build()
     }

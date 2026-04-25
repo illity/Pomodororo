@@ -31,6 +31,12 @@ class PomodoroRepository(
         return sessionDao.getAll(cycleId)// default if DB empty
     }
 
+    suspend fun loadSessionsByTag(tag: String): List<PomodoroSessionModel> {
+        Log.d("PomodoroRepository", "LoadSession, tag: ${tag}")
+        return sessionDao.getAllByTag(tag)// default if DB empty
+    }
+
+
     suspend fun saveSession(model: PomodoroSessionModel) {
         Log.d("PomodoroRepository", "saveSession is called. Session ${model.id} is saved")
         sessionDao.upsert(model.toEntity())

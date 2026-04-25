@@ -33,5 +33,5 @@ fun PomodoroSessionModel.toEntity(): PomodoroSessionEntity =
         currentPhase = currentPhase
     )
 
-fun TagEntity.toModel(): TagModel = TagModel(tag = this.tag, color = this.color)
-fun TagModel.toEntity(): TagEntity = TagEntity(tag = this.tag, color = this.color)
+fun TagEntity.toModel() = TagModel(id = this.id, tag = this.tag, color = this.color)
+fun TagModel.toEntity() = TagEntity(id = this.id, tag = this.tag, color = this.color)
