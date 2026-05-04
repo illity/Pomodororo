@@ -42,6 +42,10 @@ class PomodoroRepository(
         sessionDao.upsert(model.toEntity())
     }
 
+    suspend fun setAllCyclesInactive() {
+        cycleDao.setAllCyclesInactive()
+    }
+
     suspend fun next() {
         cycleDao.insert(PomodoroCycleModel().toEntity())
     }

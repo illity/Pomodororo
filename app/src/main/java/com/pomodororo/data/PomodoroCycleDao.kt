@@ -14,4 +14,7 @@ interface PomodoroCycleDao {
 
     @Upsert
     suspend fun upsert(value: PomodoroCycleEntity)
+
+    @Query("UPDATE pomodoro_cycle SET active = 0")
+    suspend fun setAllCyclesInactive()
 }

@@ -123,17 +123,14 @@ object PomodoroController {
         // Check if cycle completed
         if (_state.value.completedSessions >= 4) {
             // Reset sessions
-            _state.value = _state.value.copy(
-                completedSessions = 0,
-                doneSessions = 0,
-                currentPhase = "focus",
-                remainingSeconds = _state.value.focusSeconds,
-                isRunning = false
-            )
-            _sessions.value = emptyList()
-            createNextSession("focus")
-            saveCycle()
-            job?.cancel()
+//            _state.value = _state.value.copy(
+//                completedSessions = 0,
+//                doneSessions = 0,
+//                currentPhase = "focus",
+//                remainingSeconds = _state.value.focusSeconds,
+//                isRunning = false
+//            )
+            cancel()
             return
         }
 
@@ -231,11 +228,17 @@ object PomodoroController {
 
     fun cancel() {
 
+        //fix active cycles, it shouldnt matter in the future
+        CoroutineScope(Dispatchers.IO).launch {
+            repository.setAllCyclesInactive()
+        }
+
         stopTimer()
 
         CoroutineScope(Dispatchers.IO).launch {
 
             _state.value = _state.value.copy(active = false)
+            Log.d("Controller.cancel", _state.value.toString())
             repository.save(_state.value)
 
             repository.next()
@@ -245,6 +248,7 @@ object PomodoroController {
                 tag = _state.value.tag,
                 color = _state.value.color
             )
+            repository.save(_state.value)
 
             _sessions.value = emptyList()
 
