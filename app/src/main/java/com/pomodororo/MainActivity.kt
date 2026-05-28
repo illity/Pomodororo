@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +57,10 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
 import com.pomodororo.model.PomodoroSessionModel
 import com.pomodororo.model.TagModel
 import java.time.Instant
@@ -596,6 +601,90 @@ fun StatItem(
     }
 }
 
+@Composable
+fun DayTimelineSingleLine(
+    sessions: List<PomodoroSessionModel>,
+    date: LocalDate,
+    modifier: Modifier = Modifier,
+    sessionDurationSeconds: Long = 1500L
+) {
+    val zone = ZoneId.systemDefault()
+
+    val startOfDay = date.atStartOfDay(zone).toInstant().toEpochMilli()
+    val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(16.dp)
+    ) {
+        val widthPx = size.width
+        val centerY = size.height / 2
+
+        val millisInDay = 24f * 60f * 60f * 1000f
+
+        val strokeWidth = 6f
+
+        // 🧱 Base line
+        drawLine(
+            color = Color.Gray.copy(alpha = 0.3f),
+            start = Offset(0f, centerY),
+            end = Offset(widthPx, centerY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round
+        )
+
+        sessions.forEach { session ->
+
+            val sessionEnd = session.endTime
+            val sessionStart = sessionEnd - (sessionDurationSeconds * 1000)
+
+            // Clamp to current day
+            val clampedStart = maxOf(sessionStart, startOfDay)
+            val clampedEnd = minOf(sessionEnd, endOfDay)
+
+            if (clampedEnd <= startOfDay || clampedStart >= endOfDay) return@forEach
+
+            val startOffset = (clampedStart - startOfDay).toFloat()
+            val endOffset = (clampedEnd - startOfDay).toFloat()
+
+            val startX = (startOffset / millisInDay) * widthPx
+            val endX = (endOffset / millisInDay) * widthPx
+
+            drawLine(
+                color = Color(session.color),
+                start = Offset(startX, centerY),
+                end = Offset(endX, centerY),
+                strokeWidth = strokeWidth,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+@Composable
+fun MonthTimeline(
+    sessions: List<PomodoroSessionModel>,
+    month: LocalDate,
+    modifier: Modifier = Modifier
+) {
+    val daysInMonth = month.lengthOfMonth()
+
+    Column(modifier = modifier) {
+        for (day in 1..daysInMonth) {
+            val date = month.withDayOfMonth(day)
+
+            DayTimelineSingleLine(
+                sessions = sessions,
+                date = date,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 0.dp)
+                    .height(6.dp)
+            )
+        }
+    }
+}
 
 @Composable
 fun StatisticsScreen(
@@ -710,7 +799,6 @@ fun StatisticsScreen(
             }
 
 
-
             Spacer(modifier = Modifier.height(8.dp))
 
             HorizontalPager(
@@ -731,12 +819,21 @@ fun StatisticsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            DayTimelineSingleLine(
+                sessions = allSessions,
+                date = selectedDate,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+            )
+
             if (tags.isEmpty()) {
                 Text(
                     "No tags available",
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            } else {
+            }
+            else {
 
                 val (startOfDay, endOfDay) = selectedDate.toStartAndEndOfDayMillis()
 
@@ -803,9 +900,15 @@ fun StatisticsScreen(
                     )
                 }
             }
+
+            MonthTimeline(
+                sessions = allSessions,
+                month = selectedDate
+            )
         }
     }
 }
+
 /**
  * Converts a LocalDate into a pair of (startOfDayMillis, endOfDayMillis)
  */
