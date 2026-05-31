@@ -905,6 +905,123 @@ fun StatisticsScreen(
                 sessions = allSessions,
                 month = selectedDate
             )
+            TagConsolidationChart(
+                sessions = allSessions,
+                month = selectedDate
+            )
+        }
+    }
+}
+
+@Composable
+fun TagConsolidationChart(
+    sessions: List<PomodoroSessionModel>,
+    month: LocalDate,
+    modifier: Modifier = Modifier,
+    sessionDurationMinutes: Int = 25
+) {
+
+    val startOfMonth = month.withDayOfMonth(1)
+        .atStartOfDay(ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+
+    val endOfMonth = month.plusMonths(1)
+        .withDayOfMonth(1)
+        .atStartOfDay(ZoneId.systemDefault())
+        .toInstant()
+        .toEpochMilli()
+
+    val monthSessions = sessions.filter {
+        it.endTime in startOfMonth until endOfMonth
+    }
+
+    val grouped = monthSessions.groupBy { it.tag }
+
+    val chartData = grouped.map { (tag, tagSessions) ->
+
+        val totalMinutes = tagSessions.size * sessionDurationMinutes
+        val totalHours = totalMinutes / 60f
+
+        Triple(
+            tag ?: "No Tag",
+            totalHours,
+            tagSessions.firstOrNull()?.color ?: 0xFFFFFFFF
+        )
+    }
+        .sortedByDescending { it.second }
+
+    val maxHours = chartData.maxOfOrNull { it.second } ?: 1f
+
+    Column(
+        modifier = modifier.fillMaxWidth()
+    ) {
+
+        Text(
+            text = "Hours by Tag",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        chartData.forEach { (tagName, hours, color) ->
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .background(Color(color), CircleShape)
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Text(
+                        text = tagName,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Text(
+                        text = "%.1fh".format(hours),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(18.dp)
+                        .background(
+                            Color.Gray.copy(alpha = 0.15f),
+                            shape = CircleShape
+                        )
+                ) {
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(hours / maxHours)
+                            .height(18.dp)
+                            .background(
+                                Color(color),
+                                shape = CircleShape
+                            )
+                    )
+                }
+            }
         }
     }
 }
