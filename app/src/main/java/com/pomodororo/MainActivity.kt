@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -29,6 +30,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -36,6 +38,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -53,6 +56,7 @@ import com.pomodororo.model.PomodoroCycleModel
 import com.pomodororo.ui.theme.PomodororoTheme
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +65,12 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.unit.Dp
+import com.github.skydoves.colorpicker.compose.AlphaSlider
+import com.github.skydoves.colorpicker.compose.BrightnessSlider
+import com.github.skydoves.colorpicker.compose.HsvColorPicker
+import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.pomodororo.model.PomodoroSessionModel
 import com.pomodororo.model.TagModel
 import java.time.Instant
@@ -94,18 +104,257 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@Composable
+fun ColorPickerDialog(
+    initialColor: Long,
+    onColorSelected: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedColor by remember {
+        mutableLongStateOf(initialColor)
+    }
+
+    val controller = rememberColorPickerController()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text("Pick a color")
+        },
+        text = {
+            Column {
+
+                HsvColorPicker(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp),
+                    controller = controller,
+                    onColorChanged = { envelope ->
+                        selectedColor =
+                            envelope.color
+                                .toArgb()
+                                .toLong()
+                                .and(0xFFFFFFFFL)
+                    }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                AlphaSlider(
+                    modifier = Modifier.fillMaxWidth(),
+                    controller = controller
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                BrightnessSlider(
+                    modifier = Modifier.fillMaxWidth(),
+                    controller = controller
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .background(
+                            Color(selectedColor.toInt()),
+                            CircleShape
+                        )
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onColorSelected(selectedColor)
+                    onDismiss()
+                }
+            ) {
+                Text("OK")
+            }
+        }
+    )
+}
+
+@Composable
+fun ColorPickerButton(
+    color: Long,
+    size: Dp = 24.dp,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .background(
+                Color(color.toInt()),
+                CircleShape
+            )
+            .clickable(onClick = onClick)
+    )
+}
+
+@Composable
+fun Tag(
+    controller: PomodoroController,
+    tagName: String?,
+    tagColor: Long
+) {
+    val tags by controller.tags.collectAsState()
+
+    var expanded by remember { mutableStateOf(false) }
+
+    var newTagName by remember { mutableStateOf("") }
+    var newTagColor by remember {
+        mutableLongStateOf(0xFFF3644CL)
+    }
+
+    var showColorPicker by remember {
+        mutableStateOf(false)
+    }
+
+    Column {
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp)
+        ) {
+
+            Box(
+                modifier = Modifier
+                    .size(10.dp)
+                    .background(
+                        Color(tagColor.toInt()),
+                        CircleShape
+                    )
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Text(
+                text = tagName ?: "Tags",
+                color = MaterialTheme.colorScheme.onBackground
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Icon(
+                painter = painterResource(
+                    if (expanded) R.drawable.play
+                    else R.drawable.pause
+                ),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+        }
+
+        if (expanded) {
+
+            Column(
+                modifier = Modifier.padding(
+                    start = 16.dp,
+                    top = 4.dp
+                )
+            ) {
+
+                tags.forEach { tag ->
+
+                    TagRow(
+                        tag = tag,
+                        onUpdate = controller::updateTag,
+                        onSelect = {
+                            controller.selectTag(it)
+                            expanded = false
+                        }
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+
+                    TextField(
+                        value = newTagName,
+                        onValueChange = {
+                            newTagName = it
+                        },
+                        modifier = Modifier.weight(1f),
+                        placeholder = {
+                            Text("New tag")
+                        }
+                    )
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    ColorPickerButton(
+                        color = newTagColor,
+                        size = 32.dp,
+                        onClick = {
+                            showColorPicker = true
+                        }
+                    )
+
+                    if (showColorPicker) {
+                        ColorPickerDialog(
+                            initialColor = newTagColor,
+                            onColorSelected = {
+                                newTagColor = it
+                            },
+                            onDismiss = {
+                                showColorPicker = false
+                            }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    Button(
+                        onClick = {
+                            if (newTagName.isNotBlank()) {
+
+                                controller.addTag(
+                                    TagModel(
+                                        tag = newTagName,
+                                        color = newTagColor
+                                    )
+                                )
+
+                                newTagName = ""
+                                newTagColor = 0xFFF3644CL
+                            }
+                        }
+                    ) {
+                        Text("Add")
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 fun TagRow(
     tag: TagModel,
-    colorOptions: List<Long>,
     onUpdate: (TagModel) -> Unit,
     onSelect: (TagModel) -> Unit
 ) {
     var editing by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf(tag.tag) }
-    var editColor by remember { mutableStateOf(tag.color) }
-    var colorExpanded by remember { mutableStateOf(false) }
+
+    var editName by remember {
+        mutableStateOf(tag.tag)
+    }
+
+    var editColor by remember {
+        mutableLongStateOf(tag.color)
+    }
+
+    var showColorPicker by remember {
+        mutableStateOf(false)
+    }
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -113,202 +362,107 @@ fun TagRow(
             .fillMaxWidth()
             .padding(vertical = 4.dp)
             .clickable(
-                enabled = !editing, // only clickable when not editing
-                onClick = { onSelect(tag) }
-            )
+                enabled = !editing
+            ) {
+                onSelect(tag)
+            }
     ) {
+
         Box(
             modifier = Modifier
                 .size(16.dp)
-                .background(Color(tag.color), shape = CircleShape)
+                .background(
+                    Color(tag.color.toInt()),
+                    CircleShape
+                )
         )
+
         Spacer(modifier = Modifier.width(8.dp))
 
         if (editing) {
+
             TextField(
                 value = editName,
-                onValueChange = { editName = it },
+                onValueChange = {
+                    editName = it
+                },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Edit tag", color = Color.White.copy(alpha = 0.5f)) },
-                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White)
+                placeholder = {
+                    Text("Edit tag")
+                }
             )
+
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Color selector
-            Box {
-                Row(
-                    modifier = Modifier
-                        .size(24.dp)
-                        .background(Color(editColor), shape = CircleShape)
-                        .clickable { colorExpanded = !colorExpanded }
-                ) {}
-
-                DropdownMenu(
-                    expanded = colorExpanded,
-                    onDismissRequest = { colorExpanded = false }
-                ) {
-                    colorOptions.forEach { c ->
-                        DropdownMenuItem(
-                            text = {
-                                Box(
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .background(Color(c), shape = CircleShape)
-                                )
-                            },
-                            onClick = {
-                                editColor = c
-                                colorExpanded = false
-                            }
-                        )
-                    }
+            ColorPickerButton(
+                color = editColor,
+                onClick = {
+                    showColorPicker = true
                 }
+            )
+
+            if (showColorPicker) {
+                ColorPickerDialog(
+                    initialColor = editColor,
+                    onColorSelected = {
+                        editColor = it
+                    },
+                    onDismiss = {
+                        showColorPicker = false
+                    }
+                )
             }
 
             Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                if (editName.isNotBlank()) {
-                    onUpdate(tag.copy(tag = editName, color = editColor))
-                    editing = false
+
+            Button(
+                onClick = {
+                    if (editName.isNotBlank()) {
+
+                        onUpdate(
+                            tag.copy(
+                                tag = editName,
+                                color = editColor
+                            )
+                        )
+
+                        editing = false
+                    }
                 }
-            }) { Text("Save") }
+            ) {
+                Text("Save")
+            }
 
             Spacer(modifier = Modifier.width(4.dp))
-            Button(onClick = { editing = false }) { Text("Cancel") }
+
+            Button(
+                onClick = {
+                    editing = false
+                    editName = tag.tag
+                    editColor = tag.color
+                }
+            ) {
+                Text("Cancel")
+            }
 
         } else {
-            Text(tag.tag, modifier = Modifier.weight(1f), color = Color.White)
-            Spacer(modifier = Modifier.width(8.dp))
-            Button(onClick = {
-                editing = true
-                editName = tag.tag
-                editColor = tag.color
-            }) { Text("Edit") }
-        }
-    }
-}
 
-@Composable
-fun Tag(controller: PomodoroController, tagName: String?, tagColor: Long) {
-    val tags by controller.tags.collectAsState()
-    var expanded by remember { mutableStateOf(false) }
-
-    // New tag state
-    var newTagName by remember { mutableStateOf("") }
-    var newTagColor by remember { mutableStateOf(0xFFF3644C) }
-
-    val colorOptions = listOf(
-        0xFFF44336, 0xFF4CAF50, 0xFF2196F3, 0xFFFFC107, 0xFF9C27B0
-    )
-
-    Column {
-        // Header
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clickable { expanded = !expanded }
-                .padding(vertical = 4.dp)
-        ) {
-            // Get the currently selected tag
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clickable { expanded = !expanded }
-                    .padding(vertical = 4.dp)
-            ) {
-                Box( modifier = Modifier .size(10.dp) .background(Color(tagColor), shape = CircleShape) )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    tagName ?: "Tags", // <-- show current tag, fallback to "Tags"
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-//                val icon = if (expanded) R.drawable.play else R.drawable.pause
-//                Icon(
-//                    painter = painterResource(icon),
-//                    contentDescription = "Expand",
-//                    modifier = Modifier.size(16.dp)
-//                )
-            }
-            Spacer(modifier = Modifier.width(8.dp))
-            val icon = if (expanded) R.drawable.play else R.drawable.pause
-            Icon(
-                painter = painterResource(icon),
-                contentDescription = "Expand",
-                modifier = Modifier.size(16.dp)
+            Text(
+                text = tag.tag,
+                modifier = Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onBackground
             )
-        }
 
-        if (expanded) {
-            Column(modifier = Modifier.padding(start = 16.dp, top = 4.dp)) {
-                tags.forEach { tag ->
-                    TagRow(
-                        tag = tag,
-                        colorOptions = colorOptions,
-                        onUpdate = { updatedTag -> controller.updateTag(updatedTag) },
-                        onSelect = { selectedTag ->
-                            controller.selectTag(selectedTag)
-                            expanded = false // <-- collapse menu
-                        }
-                    )
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Button(
+                onClick = {
+                    editing = true
+                    editName = tag.tag
+                    editColor = tag.color
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Add new tag row
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextField(
-                        value = newTagName,
-                        onValueChange = { newTagName = it },
-                        placeholder = {
-                            Text("New tag", color = Color.White.copy(alpha = 0.5f))
-                        },
-                        modifier = Modifier.weight(1f),
-                        textStyle = androidx.compose.ui.text.TextStyle(color = Color.White)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    var newColorExpanded by remember { mutableStateOf(false) }
-                    Box {
-                        Row(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .background(Color(newTagColor), shape = CircleShape)
-                                .clickable { newColorExpanded = !newColorExpanded }
-                        ) {}
-                        DropdownMenu(
-                            expanded = newColorExpanded,
-                            onDismissRequest = { newColorExpanded = false }
-                        ) {
-                            colorOptions.forEach { c ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(24.dp)
-                                                .background(Color(c), shape = CircleShape)
-                                        )
-                                    },
-                                    onClick = {
-                                        newTagColor = c
-                                        newColorExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = {
-                        if (newTagName.isNotBlank()) {
-                            controller.addTag(TagModel(tag = newTagName, color = newTagColor))
-                            newTagName = ""
-                            newTagColor = 0xFFF3644C
-                        }
-                    }) {
-                        Text("Add")
-                    }
-                }
+            ) {
+                Text("Edit")
             }
         }
     }
@@ -613,25 +767,25 @@ fun DayTimelineSingleLine(
     val startOfDay = date.atStartOfDay(zone).toInstant().toEpochMilli()
     val endOfDay = date.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
 
+    val strokeWidth = 12.dp
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(16.dp)
+            .height(strokeWidth)
     ) {
         val widthPx = size.width
-        val centerY = size.height / 2
+        val centerY = size.height / 2f
 
         val millisInDay = 24f * 60f * 60f * 1000f
+        val strokePx = size.height
 
-        val strokeWidth = 6f
-
-        // 🧱 Base line
         drawLine(
             color = Color.Gray.copy(alpha = 0.3f),
             start = Offset(0f, centerY),
             end = Offset(widthPx, centerY),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round
+            strokeWidth = strokePx,
+            cap = StrokeCap.Butt
         )
 
         sessions.forEach { session ->
@@ -639,7 +793,6 @@ fun DayTimelineSingleLine(
             val sessionEnd = session.endTime
             val sessionStart = sessionEnd - (sessionDurationSeconds * 1000)
 
-            // Clamp to current day
             val clampedStart = maxOf(sessionStart, startOfDay)
             val clampedEnd = minOf(sessionEnd, endOfDay)
 
@@ -655,8 +808,8 @@ fun DayTimelineSingleLine(
                 color = Color(session.color),
                 start = Offset(startX, centerY),
                 end = Offset(endX, centerY),
-                strokeWidth = strokeWidth,
-                cap = StrokeCap.Round
+                strokeWidth = strokePx,
+                cap = StrokeCap.Butt
             )
         }
     }
@@ -669,19 +822,53 @@ fun MonthTimeline(
     modifier: Modifier = Modifier
 ) {
     val daysInMonth = month.lengthOfMonth()
+    val textColor = MaterialTheme.colorScheme.onBackground
 
     Column(modifier = modifier) {
+
+        // Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(Modifier.width(32.dp))
+
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("00", fontSize = 10.sp, color = textColor)
+                Text("06", fontSize = 10.sp, color = textColor)
+                Text("12", fontSize = 10.sp, color = textColor)
+                Text("18", fontSize = 10.sp, color = textColor)
+                Text("24", fontSize = 10.sp, color = textColor)
+            }
+        }
+
         for (day in 1..daysInMonth) {
             val date = month.withDayOfMonth(day)
 
-            DayTimelineSingleLine(
-                sessions = sessions,
-                date = date,
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(vertical = 0.dp)
-                    .height(6.dp)
-            )
+                    .height(12.dp)
+            ) {
+                DayTimelineSingleLine(
+                    sessions = sessions,
+                    date = date,
+                    modifier = Modifier.matchParentSize()
+                )
+
+                Text(
+                    text = day.toString().padStart(2, '0'),
+                    fontSize = 10.sp,
+                    lineHeight = 10.sp,
+                    color = textColor,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                )
+            }
         }
     }
 }
@@ -818,14 +1005,14 @@ fun StatisticsScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            DayTimelineSingleLine(
-                sessions = allSessions,
-                date = selectedDate,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 12.dp)
-            )
+//
+//            DayTimelineSingleLine(
+//                sessions = allSessions,
+//                date = selectedDate,
+//                modifier = Modifier
+//                    .fillMaxWidth()
+//                    .padding(vertical = 12.dp)
+//            )
 
             if (tags.isEmpty()) {
                 Text(
@@ -847,58 +1034,58 @@ fun StatisticsScreen(
 
                     if (filteredSessions.isNotEmpty()) {
 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(10.dp)
-                                    .background(Color(tag.color), shape = CircleShape)
-                            )
+//                        Row(
+//                            verticalAlignment = Alignment.CenterVertically,
+//                            modifier = Modifier.padding(vertical = 4.dp)
+//                        ) {
+//                            Box(
+//                                modifier = Modifier
+//                                    .size(10.dp)
+//                                    .background(Color(tag.color), shape = CircleShape)
+//                            )
+//
+//                            Spacer(modifier = Modifier.width(8.dp))
+//
+//                            Text(
+//                                text = tag.tag,
+//                                color = MaterialTheme.colorScheme.onBackground
+//                            )
+//                        }
 
-                            Spacer(modifier = Modifier.width(8.dp))
+//                        Text(
+//                            text = "${filteredSessions.size} sessions completed",
+//                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+//                            modifier = Modifier.padding(start = 18.dp)
+//                        )
 
-                            Text(
-                                text = tag.tag,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                        }
-
-                        Text(
-                            text = "${filteredSessions.size} sessions completed",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 18.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(12.dp))
+//                        Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
 
                 val (totalSessionsMonth, avgSessionsDay, currentStreak) = monthStats
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-
-                    StatItem(
-                        value = totalSessionsMonth.toString(),
-                        label = "Total"
-                    )
-
-                    StatItem(
-                        value = "%.1f".format(avgSessionsDay),
-                        label = "Avg/day"
-                    )
-
-                    StatItem(
-                        value = "$currentStreak",
-                        label = "Streak"
-                    )
-                }
+//                Row(
+//                    modifier = Modifier
+//                        .fillMaxWidth()
+//                        .padding(vertical = 12.dp),
+//                    horizontalArrangement = Arrangement.SpaceEvenly
+//                ) {
+//
+//                    StatItem(
+//                        value = totalSessionsMonth.toString(),
+//                        label = "Total"
+//                    )
+//
+//                    StatItem(
+//                        value = "%.1f".format(avgSessionsDay),
+//                        label = "Avg/day"
+//                    )
+//
+//                    StatItem(
+//                        value = "$currentStreak",
+//                        label = "Streak"
+//                    )
+//                }
             }
 
             MonthTimeline(
@@ -956,13 +1143,13 @@ fun TagConsolidationChart(
     Column(
         modifier = modifier.fillMaxWidth()
     ) {
-
-        Text(
-            text = "Hours by Tag",
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground
-        )
+//
+//        Text(
+//            text = "Hours by Tag",
+//            fontSize = 18.sp,
+//            fontWeight = FontWeight.Bold,
+//            color = MaterialTheme.colorScheme.onBackground
+//        )
 
         Spacer(modifier = Modifier.height(16.dp))
 
