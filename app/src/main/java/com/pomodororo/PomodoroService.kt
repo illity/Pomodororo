@@ -18,8 +18,10 @@ class PomodoroService : Service() {
         const val CHANNEL_ID = "pomodoro_channel"
         const val ALERT_CHANNEL_ID = "pomodoro_alerts"
         const val NOTIFICATION_ID = 1
-    }
 
+        const val ACTION_TOGGLE_PLAY_PAUSE =
+            "com.pomodororo.ACTION_TOGGLE_PLAY_PAUSE"
+    }
     private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private var notificationJob: Job? = null
@@ -140,6 +142,14 @@ class PomodoroService : Service() {
         flags: Int,
         startId: Int
     ): Int {
+
+        when (intent?.action) {
+
+            ACTION_TOGGLE_PLAY_PAUSE -> {
+                PomodoroController.togglePlayPause()
+            }
+        }
+
         return START_STICKY
     }
 
@@ -162,6 +172,7 @@ class PomodoroService : Service() {
         val timeText =
             "%02d:%02d".format(minutes, seconds)
 
+        // Abrir o aplicativo ao tocar na notificação
         val intent = Intent(this, MainActivity::class.java).apply {
             flags =
                 Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -176,6 +187,33 @@ class PomodoroService : Service() {
                     PendingIntent.FLAG_IMMUTABLE
         )
 
+        // Intent para o botão Pause / Continue
+        val toggleIntent = Intent(this, PomodoroService::class.java).apply {
+            action = ACTION_TOGGLE_PLAY_PAUSE
+        }
+
+        val togglePendingIntent = PendingIntent.getService(
+            this,
+            100,
+            toggleIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or
+                    PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val toggleTitle =
+            if (model.isRunning) {
+                "Pause"
+            } else {
+                "Continue"
+            }
+
+        val toggleIcon =
+            if (model.isRunning) {
+                R.drawable.pause
+            } else {
+                R.drawable.play
+            }
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(
                 "Pomodoro Timer - ${
@@ -188,6 +226,16 @@ class PomodoroService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+
+            // Pause / Continue
+            .addAction(
+                NotificationCompat.Action(
+                    toggleIcon,
+                    toggleTitle,
+                    togglePendingIntent
+                )
+            )
+
             .build()
     }
 

@@ -56,6 +56,7 @@ dependencies {
     implementation(libs.androidx.room.runtime.android)
     implementation(libs.androidx.room.ktx)          // optional but recommended
     ksp(libs.androidx.room.compiler)
+    implementation("com.github.skydoves:colorpicker-compose:1.1.2")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

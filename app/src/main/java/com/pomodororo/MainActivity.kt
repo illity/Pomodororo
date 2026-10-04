@@ -5,8 +5,10 @@ import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -25,21 +27,31 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -60,6 +72,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -73,9 +86,17 @@ import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
 import com.pomodororo.model.PomodoroSessionModel
 import com.pomodororo.model.TagModel
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import android.content.Context
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import java.time.format.DateTimeFormatter
 
 class MainActivity : ComponentActivity() {
 
@@ -520,15 +541,23 @@ fun CancelButton(onClick: () -> Unit, color: Long) {
 }
 
 @Composable
-fun StartButton(isRunning: Boolean, onClick: () -> Unit, color: Long) {
-    val painter = painterResource(if (isRunning) R.drawable.pause else R.drawable.play)
+fun StartButton(
+    isRunning: Boolean,
+    onClick: () -> Unit,
+    color: Long
+) {
+    val painter = painterResource(
+        if (isRunning) R.drawable.pause
+        else R.drawable.play
+    )
+
     Icon(
         painter = painter,
         contentDescription = "Start",
         tint = Color(color),
-        modifier = Modifier.size(36.dp)
+        modifier = Modifier
+            .size(36.dp)
             .clickable(onClick = onClick)
-
     )
 }
 
@@ -1234,6 +1263,165 @@ fun LocalDate.toStartAndEndOfDayMillis(): Pair<Long, Long> {
 }
 
 @Composable
+fun SessionCard(
+    session: PomodoroSessionModel
+) {
+    val zone = ZoneId.systemDefault()
+
+    val end =
+        Instant.ofEpochMilli(session.endTime)
+            .atZone(zone)
+            .toLocalDateTime()
+
+    val start = end.minusMinutes(25)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+    ) {
+
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .background(
+                            Color(session.color),
+                            CircleShape
+                        )
+                )
+
+                Spacer(Modifier.width(8.dp))
+
+                Text(
+                    text = session.tag ?: "Sem tag",
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            DayTimelineSingleLine(
+                sessions = listOf(session),
+                date = end.toLocalDate(),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Row {
+
+                Text(
+                    "%02d:%02d".format(
+                        start.hour,
+                        start.minute
+                    )
+                )
+
+                Text("  →  ")
+
+                Text(
+                    "%02d:%02d".format(
+                        end.hour,
+                        end.minute
+                    )
+                )
+
+                Spacer(Modifier.weight(1f))
+
+                Text("25 min")
+            }
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                "#${session.id}",
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
+    }
+}
+@Composable
+fun SessionHistoryDrawer(
+    controller: PomodoroController
+) {
+    val tags by controller.tags.collectAsState()
+
+    val sessionsMap = remember {
+        mutableStateMapOf<String, List<PomodoroSessionModel>>()
+    }
+
+    tags.forEach { tag ->
+        LaunchedEffect(tag) {
+            sessionsMap[tag.tag] =
+                controller.loadSessionsByTag(tag.tag)
+        }
+    }
+
+    val allSessions = sessionsMap.values.flatten()
+
+    val sessions = allSessions;
+
+    var selectedDate by remember {
+        mutableStateOf(LocalDate.now())
+    }
+
+    val pagerState = rememberPagerState(
+        initialPage = 5000,
+        pageCount = { 10000 }
+    )
+
+    val baseMonth = LocalDate.now()
+
+    val currentMonth =
+        baseMonth.plusMonths((pagerState.currentPage - 5000).toLong())
+    Text(
+        "${currentMonth.monthValue}/${currentMonth.year}"
+    )
+
+    HorizontalPager(
+        state = pagerState
+    ) { page ->
+
+        MonthlyCalendar(
+            sessions = sessions,
+            month = baseMonth.plusMonths((page - 5000).toLong()),
+            selectedDate = selectedDate,
+            onDayClick = {
+                selectedDate = it
+            }
+        )
+    }
+    val (start, end) = selectedDate.toStartAndEndOfDayMillis()
+
+    val daySessions = sessions
+        .filter {
+            it.endTime in start..end
+        }
+        .sortedBy { it.endTime }
+    LazyColumn {
+
+        items(daySessions) { session ->
+
+            SessionCard(session)
+
+        }
+
+    }
+}
+
+
+@Composable
 fun MainScreen(
     model: PomodoroCycleModel,
     onStart: () -> Unit,
@@ -1249,81 +1437,250 @@ fun MainScreen(
         // Show the secondary screen
         StatisticsScreen(controller = controller, onBack = { showStatistics = false })
     } else {
-        PomodororoTheme {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.background)
-                    .safeDrawingPadding(),
-                verticalArrangement = Arrangement.SpaceAround
-            ) {
-                // Top section: Tag, Timer, TaskProgressBar
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Tag(
+        val context = LocalContext.current
+        val drawerState = rememberDrawerState(DrawerValue.Closed)
+
+        val scope = rememberCoroutineScope()
+        val exportLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.CreateDocument("text/csv")
+        ) { uri ->
+
+            if (uri != null) {
+                scope.launch {
+                    exportSessions(
+                        context = context,
                         controller = controller,
-                        tagName = model.tag,
-                        tagColor = model.color
+                        uri = uri
                     )
+                }
+            }
+        }
+        PomodororoTheme {
 
-                    Spacer(modifier = Modifier.size(16.dp))
-                    Timer(model.remainingSeconds)
-                    Spacer(modifier = Modifier.size(16.dp))
-                    TaskProgressBar(
-                        total = model.totalSessions,
-                        sessions = sessions,
-                        controller = controller
-                    )
-
-                    Spacer(modifier = Modifier.size(16.dp))
-                    Button(
-                        onClick = { showStatistics = true },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(model.color),    // cor de fundo do botão
-                            contentColor = Color.Black// cor do texto e ícone
-                        )
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .padding(vertical = 4.dp)
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.chartbar),
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("View Statistics")
-                        }
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    ModalDrawerSheet {
+                        SessionHistoryDrawer(controller = controller)
                     }
                 }
-
-                // Bottom section: Character + controls
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                var menuExpanded by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                        .safeDrawingPadding()
                 ) {
-                    CurrentCharacter(model.currentPhase)
-                    Spacer(modifier = Modifier.size(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(
-                            24.dp,
-                            alignment = Alignment.CenterHorizontally
-                        )
+
+                    // Menu hamburguer
+                    IconButton(
+                        onClick = { menuExpanded = true }
                     ) {
-                        StartButton(isRunning = model.isRunning, onClick = onStart, color = model.color)
-                        SkipButton(onClick = onSkip, color = model.color)
-                        RestartButton(onClick = onRestart, color = model.color)
-                        CancelButton(onClick = onCancel, color = model.color)
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = "Menu",
+                            tint = Color.White
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = menuExpanded,
+                        onDismissRequest = { menuExpanded = false }
+                    ) {
+
+                        DropdownMenuItem(
+                            text = { Text("Histórico") },
+                            onClick = {
+                                menuExpanded = false
+                                scope.launch {
+                                    drawerState.open()
+                                }
+                            }
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Exportar CSV") },
+                            onClick = {
+                                menuExpanded = false
+                                exportLauncher.launch("pomodororo_sessions.csv")
+                            }
+                        )
+                    }
+
+                    // Parte superior
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 48.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+
+                        Tag(
+                            controller = controller,
+                            tagName = model.tag,
+                            tagColor = model.color
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+
+                        Timer(model.remainingSeconds)
+
+                        Spacer(Modifier.height(16.dp))
+
+                        TaskProgressBar(
+                            total = model.totalSessions,
+                            sessions = sessions,
+                            controller = controller
+                        )
+
+                        Spacer(Modifier.height(24.dp))
+
+                        Button(
+                            onClick = { showStatistics = true },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(model.color),
+                                contentColor = Color.Black
+                            )
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+
+                                Icon(
+                                    painter = painterResource(R.drawable.chartbar),
+                                    contentDescription = null
+                                )
+
+                                Spacer(Modifier.width(8.dp))
+
+                                Text("View Statistics")
+                            }
+                        }
+                    }
+
+                    // Parte inferior
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+
+                        CurrentCharacter(model.currentPhase)
+
+                        Spacer(Modifier.height(20.dp))
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(24.dp)
+                        ) {
+
+                            StartButton(
+                                isRunning = model.isRunning,
+                                onClick = onStart,
+                                color = model.color
+                            )
+
+                            SkipButton(
+                                onClick = onSkip,
+                                color = model.color
+                            )
+
+                            RestartButton(
+                                onClick = onRestart,
+                                color = model.color
+                            )
+
+                            CancelButton(
+                                onClick = onCancel,
+                                color = model.color
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+fun sessionsToCsv(
+    sessions: List<PomodoroSessionModel>
+): String {
+
+    return buildString {
+
+        appendLine(
+            "id,tag,color,phase,start,end,duration,active"
+        )
+
+        sessions.forEach {
+
+            appendLine(
+                listOf(
+                    it.id,
+                    it.tag,
+                    it.color,
+                    it.currentPhase,
+                    it.endTime-1500,
+                    it.endTime,
+                    1500, //duração
+                    it.active
+                ).joinToString(",")
+            )
+
+        }
+
+    }
+
+}
+
+suspend fun exportSessions(
+    context: Context,
+    controller: PomodoroController,
+    uri: Uri
+) = withContext(Dispatchers.IO) {
+
+    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+
+    val tags = controller.tags.first()
+
+    val sessions = buildList {
+        tags.forEach { tag ->
+            addAll(controller.loadSessionsByTag(tag.tag))
+        }
+    }.sortedBy { it.endTime }
+
+    val csv = buildString {
+
+        appendLine(
+            "id,tag,color,phase,start,end,duration,active"
+        )
+
+        sessions.forEach { session ->
+
+            val start = Instant.ofEpochMilli(session.endTime-1500)
+                .atZone(ZoneId.systemDefault())
+                .format(formatter)
+
+            val end = Instant.ofEpochMilli(session.endTime)
+                .atZone(ZoneId.systemDefault())
+                .format(formatter)
+
+            appendLine(
+                listOf(
+                    session.id,
+                    session.tag,
+                    session.color,
+                    session.currentPhase,
+                    start,
+                    end,
+                    1500,
+                    session.active
+                ).joinToString(",")
+            )
+        }
+    }
+
+    context.contentResolver.openOutputStream(uri)?.use {
+        it.write(csv.toByteArray(Charsets.UTF_8))
+        it.flush()
     }
 }
